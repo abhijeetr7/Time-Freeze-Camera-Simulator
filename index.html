@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Time Freeze Camera Simulator</title>
+    <!-- Tailwind CSS CDN for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for the Time Freeze Camera Simulator */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a202c; /* Dark background color */
+            color: #e2e8f0; /* Light text color */
+        }
+        .container {
+            max-width: 90%; /* Responsive width */
+            margin: auto;
+            padding: 1.5rem;
+            border-radius: 1rem;
+            background-color: #2d3748; /* Slightly lighter dark background for container */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+        }
+        video {
+            border-radius: 0.75rem; /* Rounded corners for video feed */
+            background-color: black; /* Black background if video not loaded */
+            width: 100%; /* Ensure video takes full width of its container */
+            height: auto; /* Maintain aspect ratio */
+        }
+        button {
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            transition: all 0.2s ease-in-out; /* Smooth transitions for hover effects */
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Button shadow */
+        }
+        button:hover {
+            transform: translateY(-2px); /* Slight lift on hover */
+        }
+        /* Primary button styling (gradient) */
+        .btn-primary {
+            background-image: linear-gradient(to right top, #6b46c1, #805ad5);
+            color: white;
+        }
+        .btn-primary:hover {
+            background-image: linear-gradient(to right top, #805ad5, #6b46c1); /* Reverse gradient on hover */
+        }
+        /* Secondary button styling */
+        .btn-secondary {
+            background-color: #4a5568;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background-color: #6a768c;
+        }
+        .captured-frame-item {
+            width: 120px; /* Fixed width for captured frame thumbnails */
+            height: 90px; /* Fixed height for captured frame thumbnails */
+            object-fit: cover; /* Cover the area, cropping if necessary */
+            border-radius: 0.5rem;
+            border: 2px solid #6b46c1; /* Border to highlight captured frames */
+        }
+        #animation-display {
+            border-radius: 0.75rem;
+            border: 2px solid #805ad5; /* Border for the animation playback area */
+            background-color: #000; /* Black background for playback area */
+            width: 100%; /* Ensure animation display takes full width */
+            height: 20rem; /* Fixed height for consistent display, object-contain ensures fitting */
+            object-fit: contain; /* Contain the image within the area */
+        }
+        /* Styling for the custom message box */
+        #messageBox {
+            background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent black background overlay */
+        }
+        #messageBox > div {
+            background-color: #2d3748; /* Dark background for message content */
+        }
+    </style>
+</head>
+<body>
+    <!-- Main container for the application, centered on the screen -->
+    <div class="min-h-screen flex items-center justify-center p-4">
+        <div class="container flex flex-col items-center space-y-6">
+            <h1 class="text-3xl font-bold text-center mb-4">🧊 Time Freeze Camera Simulator</h1>
+
+            <!-- Video Feed & Capture Area -->
+            <div class="w-full max-w-xl bg-gray-700 rounded-xl p-4 flex flex-col items-center">
+                <video id="videoFeed" class="w-full rounded-lg mb-4" autoplay playsinline></video>
+                <canvas id="hiddenCanvas" class="hidden"></canvas> <!-- Hidden canvas for capturing frames -->
+                <div class="flex flex-wrap justify-center gap-4">
+                    <button id="startButton" class="btn-primary">Start Camera</button>
+                    <button id="captureButton" class="btn-primary" disabled>Capture Frame</button>
+                </div>
+            </div>
+
+            <!-- Captured Frames Display -->
+            <div class="w-full max-w-xl bg-gray-700 rounded-xl p-4">
+                <h2 class="text-xl font-semibold mb-3 text-center">Captured Frames</h2>
+                <div id="capturedFramesContainer" class="flex flex-wrap justify-center gap-2 max-h-48 overflow-y-auto p-2 border border-gray-600 rounded-lg bg-gray-800">
+                    <!-- Captured images (thumbnails) will be appended here -->
+                </div>
+                <div class="flex flex-wrap justify-center gap-4 mt-4">
+                    <button id="playButton" class="btn-primary" disabled>Play Freeze</button>
+                    <button id="exportGifButton" class="btn-primary" disabled>Export GIF</button>
+                    <button id="clearButton" class="btn-secondary" disabled>Clear All</button>
+                </div>
+            </div>
+
+            <!-- Animation Playback Area -->
+            <div class="w-full max-w-xl bg-gray-700 rounded-xl p-4 flex flex-col items-center">
+                <h2 class="text-xl font-semibold mb-3 text-center">Time Freeze Playback</h2>
+                <img id="animation-display" src="https://placehold.co/480x360/000000/FFFFFF?text=Animation+Playback" alt="Animation Playback" class="w-full rounded-lg h-80 object-contain mb-4">
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Message Box for alerts -->
+    <div id="messageBox" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl max-w-sm w-full text-center">
+            <p id="messageText" class="text-lg mb-4"></p>
+            <button id="messageCloseButton" class="btn-primary">OK</button>
+        </div>
+    </div>
+
+    <!-- GIF.js script for client-side GIF generation -->
+    <script src="https://unpkg.com/gif.js@0.2.0/dist/gif.js"></script>
+
+    <script>
+        // Get references to DOM elements
+        const videoFeed = document.getElementById('videoFeed');
+        const hiddenCanvas = document.getElementById('hiddenCanvas');
+        const hiddenContext = hiddenCanvas.getContext('2d'); // Context for the hidden canvas
+        const startButton = document.getElementById('startButton');
+        const captureButton = document.getElementById('captureButton');
+        const playButton = document.getElementById('playButton');
+        const exportGifButton = document.getElementById('exportGifButton');
+        const clearButton = document.getElementById('clearButton');
+        const capturedFramesContainer = document.getElementById('capturedFramesContainer');
+        const animationDisplay = document.getElementById('animation-display');
+
+        // Message box elements
+        const messageBox = document.getElementById('messageBox');
+        const messageText = document.getElementById('messageText');
+        const messageCloseButton = document.getElementById('messageCloseButton');
+
+        let mediaStream = null; // To hold the webcam's media stream
+        let capturedCanvases = []; // Array to store captured canvas elements for GIF generation
+
+        /**
+         * Displays a custom message box instead of the browser's alert().
+         * @param {string} message - The message to display.
+         */
+        const showMessage = (message) => {
+            messageText.textContent = message;
+            messageBox.classList.remove('hidden'); // Show the message box
+        };
+
+        // Event listener for the custom message box close button
+        messageCloseButton.addEventListener('click', () => {
+            messageBox.classList.add('hidden'); // Hide the message box
+        });
+
+        /**
+         * Updates the disabled state of control buttons based on the application's state.
+         * Buttons are enabled/disabled based on whether the camera is running and frames are captured.
+         */
+        const updateButtonStates = () => {
+            const hasFrames = capturedCanvases.length > 0;
+            playButton.disabled = !hasFrames;
+            exportGifButton.disabled = !hasFrames;
+            clearButton.disabled = !hasFrames;
+            captureButton.disabled = !mediaStream; // Capture button enabled only if camera is active
+        };
+
+        /**
+         * Starts the webcam feed. Requests user media (video), sets it as the video source,
+         * and updates the canvas dimensions to match the video.
+         */
+        const startCamera = async () => {
+            try {
+                // Request access to the user's video stream
+                mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                videoFeed.srcObject = mediaStream; // Set the video element's source to the stream
+
+                // Once video metadata is loaded, set hidden canvas dimensions
+                videoFeed.onloadedmetadata = () => {
+                    hiddenCanvas.width = videoFeed.videoWidth;
+                    hiddenCanvas.height = videoFeed.videoHeight;
+                    videoFeed.play(); // Start playing the video
+                    startButton.disabled = true; // Disable start button once camera is on
+                    updateButtonStates(); // Update button states
+                };
+            } catch (err) {
+                console.error('Error accessing camera:', err);
+                // Use custom message box instead of alert()
+                showMessage('Could not start camera. Please ensure you have a webcam and grant permission.');
+            }
+        };
+
+        /**
+         * Captures the current frame from the video feed.
+         * Draws the frame onto a new canvas, stores the canvas, and displays a thumbnail.
+         */
+        const captureFrame = () => {
+            // Check if media stream is active and video is ready for capture
+            if (mediaStream && videoFeed.readyState === videoFeed.HAVE_ENOUGH_DATA) {
+                // Create a new canvas for each captured frame to store it independently
+                const frameCanvas = document.createElement('canvas');
+                frameCanvas.width = videoFeed.videoWidth;
+                frameCanvas.height = videoFeed.videoHeight;
+                const frameContext = frameCanvas.getContext('2d');
+                // Draw the current video frame onto the new canvas
+                frameContext.drawImage(videoFeed, 0, 0, frameCanvas.width, frameCanvas.height);
+
+                capturedCanvases.push(frameCanvas); // Store the canvas element directly
+
+                // Create an image element to display the captured frame as a thumbnail
+                const img = document.createElement('img');
+                img.src = frameCanvas.toDataURL('image/png'); // Convert canvas content to data URL for display
+                img.classList.add('captured-frame-item');
+                capturedFramesContainer.appendChild(img); // Append thumbnail to the display container
+
+                updateButtonStates(); // Update button states after capturing
+            } else {
+                console.warn('Video not ready for capture or camera not started.');
+            }
+        };
+
+        /**
+         * Plays the captured frames as a time-freeze animation.
+         * Iterates through the stored canvases and updates the display image source rapidly.
+         */
+        const playFreeze = () => {
+            if (capturedCanvases.length === 0) {
+                showMessage('No frames captured to play!');
+                return;
+            }
+
+            let frameIndex = 0;
+            const frameDelay = 100; // Delay in milliseconds between each frame (10 FPS)
+
+            // Recursive function to display the next frame
+            const displayNextFrame = () => {
+                if (frameIndex < capturedCanvases.length) {
+                    // Set the animation display image source to the current frame's data URL
+                    animationDisplay.src = capturedCanvases[frameIndex].toDataURL('image/png');
+                    frameIndex++;
+                    setTimeout(displayNextFrame, frameDelay); // Schedule next frame display
+                }
+                // Animation stops automatically when all frames are displayed
+            };
+
+            displayNextFrame(); // Start the animation
+        };
+
+        /**
+         * Exports the captured frames as an animated GIF using gif.js.
+         * Displays progress and provides a download link when finished.
+         */
+        const exportGif = () => {
+            if (capturedCanvases.length === 0) {
+                showMessage('No frames captured to export!');
+                return;
+            }
+
+            // Show a loading indicator during GIF generation
+            animationDisplay.src = "https://placehold.co/480x360/000000/FFFFFF?text=Generating+GIF...";
+            exportGifButton.disabled = true; // Disable the export button during generation
+
+            // Initialize GIF.js
+            const gif = new GIF({
+                workers: 2, // Number of web workers to use for faster encoding
+                quality: 10, // GIF quality (lower is faster, higher is better quality)
+                width: hiddenCanvas.width, // Set GIF width to captured frame width
+                height: hiddenCanvas.height, // Set GIF height to captured frame height
+                workerScript: 'https://unpkg.com/gif.js@0.2.0/dist/gif.worker.js' // Path to the gif.js worker script
+            });
+
+            // Add each captured canvas as a frame to the GIF
+            capturedCanvases.forEach(canvas => {
+                gif.addFrame(canvas, { delay: 100 }); // Add canvas frame with a delay
+            });
+
+            // Event listener for when GIF generation is complete
+            gif.on('finished', (blob) => {
+                const url = URL.createObjectURL(blob); // Create a URL for the generated GIF blob
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'time-freeze.gif'; // Suggested download filename
+                document.body.appendChild(a);
+                a.click(); // Programmatically click the link to start download
+                document.body.removeChild(a); // Clean up the temporary link element
+                URL.revokeObjectURL(url); // Release the object URL
+                // Display the last frame on the animation display after export
+                animationDisplay.src = capturedCanvases[capturedCanvases.length - 1].toDataURL('image/png');
+                exportGifButton.disabled = false; // Re-enable the export button
+            });
+
+            // Event listener for GIF generation progress
+            gif.on('progress', (p) => {
+                console.log(`GIF generation progress: ${Math.round(p * 100)}%`);
+                // Update the animation display with progress percentage
+                animationDisplay.src = `https://placehold.co/480x360/000000/FFFFFF?text=Generating+GIF...${Math.round(p * 100)}%`;
+            });
+
+            gif.render(); // Start the GIF rendering process
+        };
+
+
+        /**
+         * Clears all captured frames and resets the display.
+         */
+        const clearFrames = () => {
+            capturedCanvases = []; // Clear the array of captured canvases
+            capturedFramesContainer.innerHTML = ''; // Remove all thumbnail images from display
+            // Reset the animation display to its placeholder
+            animationDisplay.src = "https://placehold.co/480x360/000000/FFFFFF?text=Animation+Playback";
+            updateButtonStates(); // Update button states after clearing
+        };
+
+        // Add event listeners to control buttons
+        startButton.addEventListener('click', startCamera);
+        captureButton.addEventListener('click', captureFrame);
+        playButton.addEventListener('click', playFreeze);
+        exportGifButton.addEventListener('click', exportGif);
+        clearButton.addEventListener('click', clearFrames);
+
+        // Initial state update when the DOM content is fully loaded
+        document.addEventListener('DOMContentLoaded', updateButtonStates);
+    </script>
+</body>
+</html>
+
